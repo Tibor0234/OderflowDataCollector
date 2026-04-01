@@ -1,5 +1,5 @@
 import asyncio, os
-from utils import make_session_dir
+from utils import make_next_session_dir
 from dotenv import load_dotenv
 from fetchers.news_fetcher import NewsFetcher
 from fetchers.context_fetcher import ContextFetcher
@@ -17,7 +17,7 @@ async def main():
     tasks = []
 
     for pair in PAIRS:
-        session_dir = make_session_dir(BASE_DIR, pair, 1)
+        session_dir = make_next_session_dir(BASE_DIR, pair)
 
         # --- News Fetcher ---
         news_fetcher = NewsFetcher(finnhub_client, pair, session_dir)
