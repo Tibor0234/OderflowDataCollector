@@ -7,7 +7,7 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MAIN_SCRIPT = os.path.join(BASE_DIR, "main.py")
 EXIT_RESTART_CODE = 1
-LOG_FILE = os.path.join(BASE_DIR, "processhandler_log.txt")
+LOG_FILE = os.path.join(BASE_DIR, "log.txt")
 
 def log(msg):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
