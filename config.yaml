@@ -1,0 +1,10 @@
+pairs:
+  - BTCUSDT
+  - ETHUSDT
+
+modules:
+  trades: true
+  orderbook: true
+  open_interest: true
+  news: true
+  ohlcv: true

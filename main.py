@@ -1,45 +1,94 @@
-import asyncio, os
-from utils import make_next_session_dir
+import asyncio
+import os
+import yaml
 from dotenv import load_dotenv
+
+import finnhub
+
+from db.init import init_db
+from db.connection import get_connection
+from db.session import create_session, create_session_pair
+from db.writer import DBWriter
+from db.writer_queue import WriterQueue
+
 from fetchers.news_fetcher import NewsFetcher
-from fetchers.context_fetcher import ContextFetcher
+from fetchers.ohlcv_fetcher import OHLCVFetcher
 from fetchers.open_interest_fetcher import OpenInterestFetcher
 from ws_clients.order_book_ws import OrderBookWS
 from ws_clients.trades_ws import TradesWS
-import finnhub, os
 
-PAIRS = ["BTCUSDT"]
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 load_dotenv()
 finnhub_client = finnhub.Client(api_key=os.getenv("FINNHUB_API_KEY"))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+
+with open(CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+
+PAIRS = config["pairs"]
+MODULES = config["modules"]
 
 async def main():
+    conn = get_connection()
+    init_db(conn)
+
+    queue = asyncio.Queue(maxsize=50000)
+
+    writer = DBWriter(conn, queue)
+    writer_task = asyncio.create_task(writer.run())
+
+    writer_queue = WriterQueue(queue)
+
     tasks = []
 
+    session_id = create_session(conn)
+
     for pair in PAIRS:
-        session_dir = make_next_session_dir(BASE_DIR, pair)
+        session_pair_id = create_session_pair(conn, session_id, pair)
 
-        # --- News Fetcher ---
-        news_fetcher = NewsFetcher(finnhub_client, pair, session_dir)
-        tasks.append(asyncio.create_task(news_fetcher.run()))
+        # -------------------------
+        # TRADES WS
+        # -------------------------
+        if MODULES.get("trades"):
+            trades_ws = TradesWS(pair, writer_queue, session_pair_id)
+            tasks.append(asyncio.create_task(trades_ws.run()))
 
-        # --- Context Fetcher ---
-        context_fetcher = ContextFetcher(pair, session_dir)
-        tasks.append(asyncio.create_task(context_fetcher.run()))
+        # -------------------------
+        # ORDERBOOK WS
+        # -------------------------
+        if MODULES.get("orderbook"):
+            ob_ws = OrderBookWS(pair, writer_queue, session_pair_id)
+            tasks.append(asyncio.create_task(ob_ws.run()))
 
-        # --- Open Interest Fetcher ---
-        oi_fetcher = OpenInterestFetcher(pair, session_dir)
-        tasks.append(asyncio.create_task(oi_fetcher.run()))
+        # -------------------------
+        # OPEN INTEREST
+        # -------------------------
+        if MODULES.get("open_interest"):
+            oi_fetcher = OpenInterestFetcher(pair, writer_queue, session_pair_id)
+            tasks.append(asyncio.create_task(oi_fetcher.run()))
 
-        # --- Order Book WS ---
-        ob_ws = OrderBookWS(pair, session_dir)
-        tasks.append(asyncio.create_task(ob_ws.run()))
+        # -------------------------
+        # NEWS
+        # -------------------------
+        if MODULES.get("news"):
+            news_fetcher = NewsFetcher(
+                finnhub_client,
+                pair,
+                writer_queue,
+                session_pair_id
+            )
+            tasks.append(asyncio.create_task(news_fetcher.run()))
 
-        # --- Trades WS ---
-        trades_ws = TradesWS(pair, session_dir)
-        tasks.append(asyncio.create_task(trades_ws.run()))
+        # -------------------------
+        # OHLCV
+        # -------------------------
+        if MODULES.get("ohlcv"):
+            ohlcv_fetcher = OHLCVFetcher(pair, writer_queue, session_pair_id)
+            tasks.append(asyncio.create_task(ohlcv_fetcher.run()))
 
-    await asyncio.gather(*tasks)
+    await asyncio.gather(writer_task, *tasks)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

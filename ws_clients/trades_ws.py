@@ -1,32 +1,108 @@
-import asyncio, websockets, json, aiofiles
+import asyncio
+import time
+import websockets
+import json
+import random
 from decimal import Decimal
-from utils import update_connection, get_file_path
+from db.writer_queue import WriterQueue
+from logger import setup_logger
+
 
 class TradesWS:
-    def __init__(self, pair, session_dir):
+    def __init__(self, pair, writer: WriterQueue, session_pair_id: int):
         self.pair = pair
-        self.session_dir = session_dir
-        self.ws_url = f"wss://fstream.binance.com/ws/{pair.lower()}@aggTrade"
-        self.trades_file = get_file_path(session_dir, pair, "tr")
+        self.writer = writer
+        self.session_pair_id = session_pair_id
+
+        self.logger = setup_logger(f"{pair.upper()}_Trades-WS")
+
+        self.ws_url = f"wss://fstream.binance.com/ws/{pair.lower()}@trade"
+
         self.buffer = []
 
-    async def run(self):
-        while True:
-            try:
-                async with websockets.connect(self.ws_url) as ws:
-                    while True:
-                        raw = await ws.recv()
-                        update_connection()
-                        data = json.loads(raw)
-                        price, qty = Decimal(data['p']), Decimal(data['q'])
-                        if price == 0 or qty == 0:
-                            continue
+        self.logger.info(f"Initialized WS: {self.ws_url}")
 
-                        self.buffer.append(raw)
-                        if len(self.buffer) >= 50:
-                            async with aiofiles.open(self.trades_file, "a") as f:
-                                await f.write("\n".join(self.buffer) + "\n")
-                            self.buffer.clear()
-            except Exception as e:
-                print(f"{self.pair} Trades WS error:", e)
-                await asyncio.sleep(1)
+        self.ws_alive = False
+        self.msg_count = 0
+        self.last_msg_time = 0
+
+    async def run(self):
+        backoff = 1
+
+        heartbeat_task = asyncio.create_task(self._heartbeat())
+
+        try:
+            while True:
+                try:
+                    self.logger.info("Connecting WebSocket...")
+                    self.ws_alive = False
+
+                    async with websockets.connect(self.ws_url) as ws:
+                        self.logger.info("Connected to WebSocket")
+
+                        self.ws_alive = True
+                        backoff = 1
+
+                        while True:
+                            raw = await ws.recv()
+                            data = json.loads(raw)
+
+                            self.msg_count += 1
+                            self.last_msg_time = time.time()
+
+                            price = Decimal(data["p"])
+                            qty = Decimal(data["q"])
+
+                            if price == 0 or qty == 0:
+                                continue
+
+                            self.buffer.append(data)
+
+                            if len(self.buffer) >= 200:
+                                await self.writer.push(
+                                    "trades",
+                                    self.buffer,
+                                    self.session_pair_id
+                                )
+                                self.buffer.clear()
+
+                except Exception as e:
+                    self.ws_alive = False
+                    self.logger.warning(f"WS error: {e}")
+
+                    if self.buffer:
+                        await self.writer.push(
+                            "trades",
+                            self.buffer,
+                            self.session_pair_id
+                        )
+                        self.buffer.clear()
+
+                    sleep_time = min(backoff, 60)
+                    await asyncio.sleep(sleep_time + random.random())
+
+                    backoff *= 2
+
+        finally:
+            heartbeat_task.cancel()
+
+    
+    async def _heartbeat(self, rate=60):
+        self.msg_count = 0
+        last = 0
+
+        while True:
+            await asyncio.sleep(rate)
+
+            if not self.ws_alive:
+                self.logger.warning("Stream DOWN")
+                continue
+
+            delta = self.msg_count - last
+            last = self.msg_count
+
+            lag = time.time() - self.last_msg_time
+
+            self.logger.info(
+                f"Stream alive | msgs={self.msg_count} | rate={delta}/{rate}s | lag={lag:.1f}s | buffer={len(self.buffer)}"
+            )

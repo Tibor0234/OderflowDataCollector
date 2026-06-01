@@ -1,49 +1,99 @@
-import asyncio, json, aiofiles
-from datetime import datetime, timedelta
-from utils import get_file_path
+import asyncio
+import finnhub
+import random
+from db.writer_queue import WriterQueue
+from logger import setup_logger
+
 
 class NewsFetcher:
-    def __init__(self, client, pair, session_dir, category="crypto"):
+    def __init__(
+        self,
+        client: finnhub.Client,
+        pair,
+        writer: WriterQueue,
+        session_pair_id: int,
+        category="crypto"
+    ):
         self.client = client
         self.pair = pair
         self.category = category
-        self.news_file = get_file_path(session_dir, pair, "nws")
+
+        self.writer = writer
+        self.session_pair_id = session_pair_id
+
+        self.logger = setup_logger(f"{pair.upper()}_News-Fetcher")
+
         self.last_news_id = 0
+
+        self.logger.info(f"Initialized NewsFetcher ({category})")
+
+        self.fail_count = 0
 
     async def run(self):
         first_fetch = True
+
         while True:
             try:
-                news_list = self.client.general_news(category=self.category, min_id=self.last_news_id)
+                self.logger.info("Fetching news...")
+
+                news_list = self.client.general_news(
+                    category=self.category,
+                    min_id=self.last_news_id
+                )
+
                 if not news_list:
                     await asyncio.sleep(60)
                     continue
 
-                for news in news_list:
-                    news["datetime_ms"] = news["datetime"] * 1000
+                # normalize time
+                for n in news_list:
+                    n["datetime_ms"] = n["datetime"] * 1000
 
+                # first fetch cutoff (last 24h only)
                 if first_fetch:
                     newest_ts_ms = max(n["datetime_ms"] for n in news_list)
                     cutoff = newest_ts_ms - 86_400_000
-                    news_list = [n for n in news_list if n["datetime_ms"] >= cutoff]
+
+                    news_list = [
+                        n for n in news_list
+                        if n["datetime_ms"] >= cutoff
+                    ]
+
                     first_fetch = False
 
-                news_list = sorted(news_list, key=lambda n: n["datetime_ms"])
+                # sort
+                news_list.sort(key=lambda n: n["datetime_ms"])
 
-                async with aiofiles.open(self.news_file, "a") as f:
-                    for news in news_list:
-                        filtered_news = {
-                            "id": news["id"],
-                            "category": news["category"],
-                            "symbol": self.pair.upper(),
-                            "time": news["datetime_ms"],
-                            "headline": news["headline"],
-                            "summary": news.get("summary", "")
-                        }
-                        await f.write(json.dumps(filtered_news) + "\n")
-                        if news["id"] > self.last_news_id:
-                            self.last_news_id = news["id"]
+                cleaned_news = []
+
+                for news in news_list:
+                    cleaned_news.append({
+                        "id": news["id"],
+                        "category": news.get("category"),
+                        "time": news["datetime_ms"],
+                        "headline": news.get("headline"),
+                        "summary": news.get("summary", "")
+                    })
+
+                    if news["id"] > self.last_news_id:
+                        self.last_news_id = news["id"]
+
+                await self.writer.push(
+                    "news",
+                    cleaned_news,
+                    self.session_pair_id
+                )
+
+                self.fail_count = 0
+
+                await asyncio.sleep(60)
 
             except Exception as e:
-                print("News fetch error:", e)
-            await asyncio.sleep(60)
+                self.fail_count += 1
+
+                self.logger.warning(
+                    f"News error (fail={self.fail_count}): {e}"
+                )
+
+                sleep_time = min(60, 5 * self.fail_count)
+                await asyncio.sleep(sleep_time + random.random())
