@@ -1,0 +1,6 @@
+psycopg[binary]
+finnhub-python
+httpx
+websockets
+PyYAML
+python-dotenv
