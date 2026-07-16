@@ -1,26 +1,36 @@
-import os
 import logging
+import os
 from datetime import datetime
 
 
-_handlers_initialized = False
+class LoggerManager:
+    _instance = None
 
-def setup_logger(name, log_dir="logs"):
-    global _handlers_initialized
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(LoggerManager, cls).__new__(cls)
 
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+            cls._instance._initialized = False
+            cls._instance.log_file = None
+            cls._instance.log_dir = "logs"
 
-    os.makedirs(log_dir, exist_ok=True)
+        return cls._instance
 
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    def initialize(self, log_dir="logs"):
+        if self._initialized:
+            return
 
-    if not _handlers_initialized:
+        self.log_dir = log_dir
 
-        log_file = os.path.join(
-            log_dir,
+        os.makedirs(self.log_dir, exist_ok=True)
+
+        self.log_file = (
             f"{datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+        )
+
+        log_path = os.path.join(
+            self.log_dir,
+            self.log_file
         )
 
         formatter = logging.Formatter(
@@ -28,18 +38,44 @@ def setup_logger(name, log_dir="logs"):
             datefmt="%Y-%m-%d %H:%M:%S"
         )
 
-        fh = logging.FileHandler(log_file, encoding="utf-8")
-        fh.setFormatter(formatter)
+        file_handler = logging.FileHandler(
+            log_path,
+            encoding="utf-8"
+        )
+        file_handler.setFormatter(formatter)
 
-        ch = logging.StreamHandler()
-        ch.setFormatter(formatter)
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
 
-        root = logging.getLogger()
-        root.setLevel(logging.INFO)
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
 
-        root.addHandler(fh)
-        root.addHandler(ch)
+        # védelem duplikált handlerek ellen
+        root_logger.handlers.clear()
 
-        _handlers_initialized = True
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
 
-    return logger
+        # zajos külső libraryk
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+        self._initialized = True
+
+    def get_logger(self, name):
+        if not self._initialized:
+            self.initialize()
+
+        return logging.getLogger(name)
+
+    def get_log_file(self):
+        return self.log_file
+
+    def get_log_path(self):
+        if self.log_file is None:
+            return None
+
+        return os.path.join(
+            self.log_dir,
+            self.log_file
+        )

@@ -1,3 +1,9 @@
+database: 
+  backend: postgres   # postgres | sqlite
+
+retention:
+  max_sessions: 30
+
 pairs:
   - BTCUSDT
   - ETHUSDT

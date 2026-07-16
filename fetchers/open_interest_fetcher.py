@@ -2,7 +2,7 @@ import asyncio
 import httpx
 import time
 import random
-from logger import setup_logger
+from logger import LoggerManager
 from db.writer_queue import WriterQueue
 
 
@@ -12,7 +12,7 @@ class OpenInterestFetcher:
         self.writer = writer
         self.session_pair_id = session_pair_id
 
-        self.logger = setup_logger(f"{pair.upper()}_OI-Fetcher")
+        self.logger = LoggerManager().get_logger(f"{pair.upper()}_OI-Fetcher")
 
         self.url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={pair.upper()}"
 

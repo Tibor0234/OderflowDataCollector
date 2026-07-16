@@ -3,7 +3,7 @@ import httpx
 import random
 from datetime import datetime, timedelta
 from db.writer_queue import WriterQueue
-from logger import setup_logger
+from logger import LoggerManager
 
 
 class OHLCVFetcher:
@@ -12,7 +12,7 @@ class OHLCVFetcher:
         self.writer = writer
         self.session_pair_id = session_pair_id
 
-        self.logger = setup_logger(f"{pair.upper()}_OHLCV-Fetcher")
+        self.logger = LoggerManager().get_logger(f"{pair.upper()}_OHLCV-Fetcher")
 
         self.url = "https://fapi.binance.com/fapi/v1/klines"
 

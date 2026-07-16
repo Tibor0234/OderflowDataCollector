@@ -5,7 +5,7 @@ import json
 import random
 from decimal import Decimal
 from db.writer_queue import WriterQueue
-from logger import setup_logger
+from logger import LoggerManager
 
 
 class TradesWS:
@@ -14,7 +14,7 @@ class TradesWS:
         self.writer = writer
         self.session_pair_id = session_pair_id
 
-        self.logger = setup_logger(f"{pair.upper()}_Trades-WS")
+        self.logger = LoggerManager().get_logger(f"{pair.upper()}_Trades-WS")
 
         self.ws_url = f"wss://fstream.binance.com/ws/{pair.lower()}@trade"
 

@@ -2,7 +2,7 @@ import asyncio
 import finnhub
 import random
 from db.writer_queue import WriterQueue
-from logger import setup_logger
+from logger import LoggerManager
 
 
 class NewsFetcher:
@@ -21,7 +21,7 @@ class NewsFetcher:
         self.writer = writer
         self.session_pair_id = session_pair_id
 
-        self.logger = setup_logger(f"{pair.upper()}_News-Fetcher")
+        self.logger = LoggerManager().get_logger(f"{pair.upper()}_News-Fetcher")
 
         self.last_news_id = 0
 

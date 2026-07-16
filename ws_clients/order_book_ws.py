@@ -4,7 +4,7 @@ import websockets
 import json
 import random
 from db.writer_queue import WriterQueue
-from logger import setup_logger
+from logger import LoggerManager
 
 
 class OrderBookWS:
@@ -13,7 +13,7 @@ class OrderBookWS:
         self.writer = writer
         self.session_pair_id = session_pair_id
 
-        self.logger = setup_logger(f"{pair.upper()}_OB-WS")
+        self.logger = LoggerManager().get_logger(f"{pair.upper()}_OB-WS")
 
         self.ws_url = f"wss://fstream.binance.com/ws/{pair.lower()}@depth20"
 

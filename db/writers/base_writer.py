@@ -1,18 +1,16 @@
+from abc import ABC, abstractmethod
 import time
 import json
 import asyncio
-import sqlite3
 from datetime import datetime
-from logger import setup_logger
+from logger import LoggerManager
 
 
-class DBWriter:
-    def __init__(self, conn: sqlite3.Connection, queue: asyncio.Queue):
-        self.conn = conn
+class BaseDBWriter(ABC):
+    def __init__(self, queue: asyncio.Queue):
         self.queue = queue
-        self.cursor = conn.cursor()
 
-        self.logger = setup_logger("DBWriter")
+        self.logger = LoggerManager().get_logger("DBWriter")
 
         # -------------------------
         # BATCH BUFFERS
@@ -71,26 +69,19 @@ class DBWriter:
                 datetime.utcfromtimestamp(d["T"] / 1000).isoformat(),
                 float(d["p"]),
                 float(d["q"]),
-                1 if d.get("m") else 0,
+                bool(d.get("m")),
                 json.dumps(d)
             )
             for d in self.trades_buffer
         ]
 
-        self.cursor.executemany("""
-            INSERT INTO trades (
-                session_pair_id,
-                timestamp,
-                price,
-                quantity,
-                is_buyer_maker,
-                raw
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, rows)
+        self._execute_trades(rows)
 
-        self.conn.commit()
         self.trades_buffer.clear()
+
+    @abstractmethod
+    def _execute_trades(self, data):
+        pass
 
     # =========================================================
     # ORDERBOOKS (batch 200)
@@ -113,19 +104,13 @@ class DBWriter:
             for d in self.ob_buffer
         ]
 
-        self.cursor.executemany("""
-            INSERT INTO orderbooks (
-                session_pair_id,
-                timestamp,
-                bids,
-                asks,
-                raw
-            )
-            VALUES (?, ?, ?, ?, ?)
-        """, rows)
+        self._execute_orderbooks(rows)
 
-        self.conn.commit()
         self.ob_buffer.clear()
+
+    @abstractmethod
+    def _execute_orderbooks(self, data):
+        pass
 
     # =========================================================
     # NEWS (burst batching + time flush)
@@ -165,72 +150,53 @@ class DBWriter:
             for d in self.news_buffer
         ]
 
-        self.cursor.executemany("""
-            INSERT INTO news (
-                session_pair_id,
-                external_id,
-                category,
-                timestamp,
-                headline,
-                summary
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, rows)
+        self._execute_news(rows)
 
-        self.conn.commit()
         self.news_buffer.clear()
+
+    @abstractmethod
+    def _execute_news(self, data):
+        pass
 
     # =========================================================
     # OPEN INTEREST (immediate)
     # =========================================================
     def _insert_open_interest(self, data):
-        self.cursor.execute("""
-            INSERT INTO open_interest (
-                session_pair_id,
-                timestamp,
-                open_interest,
-                raw
-            )
-            VALUES (?, ?, ?, ?)
-        """, (
-            data["session_pair_id"],
-            datetime.utcfromtimestamp(data["time"] / 1000).isoformat(),
-            float(data["openInterest"]),
-            json.dumps(data)
-        ))
+        row = (
+        data["session_pair_id"],
+        datetime.utcfromtimestamp(data["time"] / 1000).isoformat(),
+        float(data["openInterest"]),
+        json.dumps(data)
+        )
 
-        self.conn.commit()
+        self._execute_open_interest(row)
+
+    @abstractmethod
+    def _execute_open_interest(self, data):
+        pass
 
     # =========================================================
     # OHLCV (immediate)
     # =========================================================
     def _insert_ohlcv(self, data):
-        for c in data["candles"]:
-            self.cursor.execute("""
-                INSERT INTO ohlcv (
-                    session_pair_id,
-                    interval,
-                    period,
-                    open_time,
-                    open,
-                    high,
-                    low,
-                    close,
-                    volume,
-                    raw
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                data["session_pair_id"],
-                data["interval"],
-                data.get("period"),
-                datetime.utcfromtimestamp(c["open_time"] / 1000).isoformat(),
-                float(c["open"]),
-                float(c["high"]),
-                float(c["low"]),
-                float(c["close"]),
-                float(c["volume"]),
-                json.dumps(c)
-            ))
+        rows = [
+        (
+            data["session_pair_id"],
+            data["interval"],
+            data.get("period"),
+            datetime.utcfromtimestamp(c["open_time"] / 1000).isoformat(),
+            float(c["open"]),
+            float(c["high"]),
+            float(c["low"]),
+            float(c["close"]),
+            float(c["volume"]),
+            json.dumps(c)
+        )
+        for c in data["candles"]
+        ]
 
-        self.conn.commit()
+        self._execute_ohlcv(rows)
+
+    @abstractmethod
+    def _execute_ohlcv(self, data):
+        pass
