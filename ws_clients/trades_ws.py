@@ -16,7 +16,7 @@ class TradesWS:
 
         self.logger = LoggerManager().get_logger(f"{pair.upper()}_Trades-WS")
 
-        self.ws_url = f"wss://fstream.binance.com/ws/{pair.lower()}@trade"
+        self.ws_url = f"wss://fstream.binance.com/market/ws/{pair.lower()}@aggTrade"
 
         self.buffer = []
 
