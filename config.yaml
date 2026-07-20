@@ -2,7 +2,7 @@ database:
   backend: postgres   # postgres | sqlite
 
 retention:
-  max_sessions: 30
+  max_sessions: 14
 
 pairs:
   - BTCUSDT
