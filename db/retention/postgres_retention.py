@@ -5,94 +5,207 @@ from db.retention.base_retention import BaseRetention
 
 
 class PostgresRetention(BaseRetention):
-    def __init__(self, conn: psycopg.Connection, max_sessions: int):
+
+    def __init__(
+        self,
+        conn: psycopg.Connection,
+        max_sessions: int
+    ):
         super().__init__(conn, max_sessions)
 
-        self.cursor = conn.cursor()
 
     def get_session_count(self):
-        self.cursor.execute("""
-            SELECT COUNT(*)
-            FROM sessions
-        """)
 
-        return self.cursor.fetchone()[0]
-    
+        with self.conn.cursor() as cursor:
+
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM sessions
+            """)
+
+            return cursor.fetchone()[0]
+
+
     def get_oldest_session(self):
-        self.cursor.execute("""
-            SELECT id
-            FROM sessions
-            ORDER BY created_at ASC
-            LIMIT 1
-        """)
 
-        row = self.cursor.fetchone()
+        with self.conn.cursor() as cursor:
 
-        return row[0] if row else None
+            cursor.execute("""
+                SELECT id
+                FROM sessions
+                ORDER BY created_at ASC
+                LIMIT 1
+            """)
+
+            row = cursor.fetchone()
+
+            return row[0] if row else None
+
 
     def delete_session(self, session_id):
-        self.cursor.execute("""
-            SELECT id
-            FROM session_pairs
-            WHERE session_id = %s
-        """, (session_id,))
 
-        pair_ids = [r[0] for r in self.cursor.fetchall()]
+        log_paths = []
 
-        for pair_id in pair_ids:
-            self.cursor.execute(
-                "DELETE FROM trades WHERE session_pair_id = %s",
-                (pair_id,)
-            )
+        try:
 
-            self.cursor.execute(
-                "DELETE FROM orderbooks WHERE session_pair_id = %s",
-                (pair_id,)
-            )
+            with self.conn.cursor() as cursor:
 
-            self.cursor.execute(
-                "DELETE FROM open_interest WHERE session_pair_id = %s",
-                (pair_id,)
-            )
+                # --------------------------------------------------
+                # Get session pairs
+                # --------------------------------------------------
 
-            self.cursor.execute(
-                "DELETE FROM news WHERE session_pair_id = %s",
-                (pair_id,)
-            )
+                cursor.execute("""
+                    SELECT id
+                    FROM session_pairs
+                    WHERE session_id = %s
+                """, (session_id,))
 
-            self.cursor.execute(
-                "DELETE FROM ohlcv WHERE session_pair_id = %s",
-                (pair_id,)
-            )
+                pair_ids = [
+                    row[0]
+                    for row in cursor.fetchall()
+                ]
 
-        # sessionhez tartozó log fájlok
-            self.cursor.execute("""
-                SELECT filename
-                FROM logs
-                WHERE session_id = %s
-            """, (session_id,))
 
-            log_paths = [r[0] for r in self.cursor.fetchall()]
+                # --------------------------------------------------
+                # Get log file paths before deleting log records
+                # --------------------------------------------------
 
-            # log rekordok törlése
-            self.cursor.execute("""
-                DELETE FROM logs
-                WHERE session_id = %s
-            """, (session_id,))
+                cursor.execute("""
+                    SELECT filename
+                    FROM logs
+                    WHERE session_id = %s
+                """, (session_id,))
 
-            # log fájlok törlése
-            for path in log_paths:
-                if os.path.exists(path):
+                log_paths = [
+                    row[0]
+                    for row in cursor.fetchall()
+                ]
+
+
+                # --------------------------------------------------
+                # Delete pair-related data
+                # --------------------------------------------------
+
+                for pair_id in pair_ids:
+
+                    cursor.execute("""
+                        DELETE FROM trades
+                        WHERE session_pair_id = %s
+                    """, (pair_id,))
+
+                    cursor.execute("""
+                        DELETE FROM orderbooks
+                        WHERE session_pair_id = %s
+                    """, (pair_id,))
+
+                    cursor.execute("""
+                        DELETE FROM open_interest
+                        WHERE session_pair_id = %s
+                    """, (pair_id,))
+
+                    cursor.execute("""
+                        DELETE FROM news
+                        WHERE session_pair_id = %s
+                    """, (pair_id,))
+
+                    cursor.execute("""
+                        DELETE FROM ohlcv
+                        WHERE session_pair_id = %s
+                    """, (pair_id,))
+
+
+                # --------------------------------------------------
+                # Delete logs
+                # --------------------------------------------------
+
+                cursor.execute("""
+                    DELETE FROM logs
+                    WHERE session_id = %s
+                """, (session_id,))
+
+
+                # --------------------------------------------------
+                # Delete session pairs
+                # --------------------------------------------------
+
+                cursor.execute("""
+                    DELETE FROM session_pairs
+                    WHERE session_id = %s
+                """, (session_id,))
+
+
+                # --------------------------------------------------
+                # Delete session
+                # --------------------------------------------------
+
+                cursor.execute("""
+                    DELETE FROM sessions
+                    WHERE id = %s
+                """, (session_id,))
+
+
+            # ------------------------------------------------------
+            # Commit the entire database operation
+            # ------------------------------------------------------
+
+            self.conn.commit()
+
+
+        except Exception:
+
+            self.conn.rollback()
+
+            raise
+
+
+        # ----------------------------------------------------------
+        # Delete physical log files only AFTER successful commit
+        # ----------------------------------------------------------
+
+        for path in log_paths:
+
+            try:
+
+                if os.path.isfile(path):
                     os.remove(path)
 
-        self.cursor.execute("""
-            DELETE FROM session_pairs
-            WHERE session_id = %s
-        """, (session_id,))
+            except OSError as exc:
 
-        self.cursor.execute("""
-            DELETE FROM sessions
-            WHERE id = %s
-        """, (session_id,))
+                print(
+                    f"Warning: failed to delete log file "
+                    f"{path}: {exc}"
+                )
 
-        self.conn.commit()
+    def vacuum(self):
+
+        previous_autocommit = self.conn.autocommit
+
+        try:
+            self.conn.autocommit = True
+
+            with self.conn.cursor() as cursor:
+
+                self.logger.info(
+                    "Starting VACUUM on trades and orderbooks."
+                )
+
+                cursor.execute("""
+                    VACUUM ANALYZE trades
+                """)
+
+                cursor.execute("""
+                    VACUUM ANALYZE orderbooks
+                """)
+
+                self.logger.info(
+                    "VACUUM completed successfully."
+                )
+
+        except Exception:
+            self.logger.exception(
+                "VACUUM failed."
+            )
+            raise
+
+        finally:
+            self.conn.autocommit = previous_autocommit

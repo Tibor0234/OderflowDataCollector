@@ -21,6 +21,10 @@ class BaseRetention(ABC):
     def delete_session(self, session_id):
         pass
 
+    @abstractmethod
+    def vacuum(self):
+        pass
+
     def enforce(self):
         deleted = False
 
@@ -37,5 +41,7 @@ class BaseRetention(ABC):
 
             self.logger.info(f"Deleted session {session_id}.")
 
-        if not deleted:
+        if deleted:
+            self.vacuum()
+        else:
             self.logger.info("No sessions deleted.")

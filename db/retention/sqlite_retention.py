@@ -98,5 +98,6 @@ class SQLiteRetention(BaseRetention):
 
         self.conn.commit()
 
+    def vacuum(self):
         # visszaadja a felszabadított helyet az OS-nek
         self.cursor.execute("VACUUM")
