@@ -13,5 +13,21 @@ class BaseSession(ABC):
         pass
 
     @abstractmethod
-    def create_session_pair(self, conn, session_id, pair):
+    def get_or_create_session(self):
+        pass
+
+    @abstractmethod
+    def get_today_session(self):
+        pass
+
+    @abstractmethod
+    def create_session_pair(self, conn, session_id, pair, metadata):
+        pass
+
+    @abstractmethod
+    def get_or_create_session_pair(self, session_id, pair, metadata):
+        pass
+
+    @abstractmethod
+    def get_session_pair(self, session_id, pair):
         pass

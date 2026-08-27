@@ -28,8 +28,6 @@ class OHLCVFetcher:
                 try:
                     self.logger.info("Fetching OHLCV data...")
 
-                    now_ts = int(datetime.utcnow().timestamp())
-
                     # -----------------------
                     # 4H (7 days)
                     # -----------------------
@@ -45,12 +43,13 @@ class OHLCVFetcher:
 
                     resp_4h.raise_for_status()
                     candles_4h = resp_4h.json()
+                    fetched_at_4h = datetime.utcnow().isoformat()
 
                     daily_record = {
                         "period": "last_week",
                         "symbol": self.pair,
                         "interval": "4h",
-                        "time": now_ts * 1000,
+                        "timestamp": fetched_at_4h,
                         "candles": [
                             {
                                 "open_time": c[0],
@@ -79,12 +78,13 @@ class OHLCVFetcher:
 
                     resp_30m.raise_for_status()
                     candles_30m = resp_30m.json()
+                    fetched_at_30m = datetime.utcnow().isoformat()
 
                     intraday_record = {
                         "period": "last_day",
                         "symbol": self.pair,
                         "interval": "30m",
-                        "time": now_ts * 1000,
+                        "timestamp": fetched_at_30m,
                         "candles": [
                             {
                                 "open_time": c[0],
@@ -112,8 +112,8 @@ class OHLCVFetcher:
                     )
 
                     self.fail_count = 0
-
-                    await asyncio.sleep(86400)
+                    
+                    return
 
                 except Exception as e:
                     self.fail_count += 1

@@ -10,10 +10,12 @@ class BaseSchema(ABC):
         self._create_sessions()
         self._create_logs()
         self._create_session_pairs()
+        self._create_instrument_metadata()
         self._create_trades()
         self._create_orderbooks()
         self._create_news()
         self._create_open_interest()
+        self._create_ohlcv_fetches()
         self._create_ohlcv()
 
         self.conn.commit()
@@ -28,6 +30,9 @@ class BaseSchema(ABC):
     def _create_session_pairs(self): pass
 
     @abstractmethod
+    def _create_instrument_metadata(self): pass
+
+    @abstractmethod
     def _create_trades(self): pass
 
     @abstractmethod
@@ -38,6 +43,9 @@ class BaseSchema(ABC):
 
     @abstractmethod
     def _create_open_interest(self): pass
+
+    @abstractmethod
+    def _create_ohlcv_fetches(self): pass
 
     @abstractmethod
     def _create_ohlcv(self): pass

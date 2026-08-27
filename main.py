@@ -27,6 +27,7 @@ from db.writer_queue import WriterQueue
 from fetchers.news_fetcher import NewsFetcher
 from fetchers.ohlcv_fetcher import OHLCVFetcher
 from fetchers.open_interest_fetcher import OpenInterestFetcher
+from fetchers.instrument_metadata_fetcher import fetch_instrument_metadata
 
 from ws_clients.order_book_ws import OrderBookWS
 from ws_clients.trades_ws import TradesWS
@@ -98,14 +99,27 @@ async def main():
 
     tasks = []
 
-    session_id = session.create_session()
+    session_id = session.get_today_session()
+    is_new_session = session_id is None
+
+    if is_new_session:
+        session_id = session.create_session()
+        instrument_metadata = await fetch_instrument_metadata(PAIRS)
 
     for pair in PAIRS:
 
-        session_pair_id = session.create_session_pair(
-            session_id,
-            pair
-        )
+        if is_new_session:
+            session_pair_id = session.create_session_pair(
+                session_id,
+                pair,
+                instrument_metadata[pair.lower()]
+            )
+        else:
+            session_pair_id = session.get_session_pair(session_id, pair)
+            if session_pair_id is None:
+                raise RuntimeError(
+                    f"Session {session_id} has no session pair for {pair}"
+                )
 
 
         if MODULES.get("trades"):
@@ -157,7 +171,7 @@ async def main():
             )
 
 
-        if MODULES.get("ohlcv"):
+        if MODULES.get("ohlcv") and is_new_session:
             tasks.append(
                 asyncio.create_task(
                     OHLCVFetcher(

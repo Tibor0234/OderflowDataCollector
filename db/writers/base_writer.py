@@ -181,9 +181,6 @@ class BaseDBWriter(ABC):
     def _insert_ohlcv(self, data):
         rows = [
         (
-            data["session_pair_id"],
-            data["interval"],
-            data.get("period"),
             datetime.utcfromtimestamp(c["open_time"] / 1000).isoformat(),
             float(c["open"]),
             float(c["high"]),
@@ -195,8 +192,21 @@ class BaseDBWriter(ABC):
         for c in data["candles"]
         ]
 
-        self._execute_ohlcv(rows)
+        self._execute_ohlcv(
+            data["session_pair_id"],
+            data["interval"],
+            data.get("period"),
+            data["timestamp"],
+            rows
+        )
 
     @abstractmethod
-    def _execute_ohlcv(self, data):
+    def _execute_ohlcv(
+        self,
+        session_pair_id,
+        interval,
+        period,
+        timestamp,
+        data
+    ):
         pass

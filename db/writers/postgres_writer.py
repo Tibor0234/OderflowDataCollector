@@ -80,12 +80,27 @@ class PostgresDBWriter(BaseDBWriter):
     # =========================================================
     # OHLCV
     # =========================================================
-    def _execute_ohlcv(self, data):
+    def _execute_ohlcv(
+        self,
+        session_pair_id,
+        interval,
+        period,
+        timestamp,
+        data
+    ):
+        self.cursor.execute("""
+            INSERT INTO ohlcv_fetches (
+                session_pair_id, interval, period, timestamp
+            )
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        """, (session_pair_id, interval, period, timestamp))
+
+        fetch_id = self.cursor.fetchone()[0]
+
         self.cursor.executemany("""
             INSERT INTO ohlcv (
-                session_pair_id,
-                interval,
-                period,
+                fetch_id,
                 open_time,
                 open,
                 high,
@@ -94,7 +109,10 @@ class PostgresDBWriter(BaseDBWriter):
                 volume,
                 raw
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, [
+            (fetch_id, *row)
+            for row in data
+        ])
 
         self.conn.commit()

@@ -65,12 +65,26 @@ class SQLiteDBWriter(BaseDBWriter):
 
         self.conn.commit()
 
-    def _execute_ohlcv(self, data):
+    def _execute_ohlcv(
+        self,
+        session_pair_id,
+        interval,
+        period,
+        timestamp,
+        data
+    ):
+        self.cursor.execute("""
+            INSERT INTO ohlcv_fetches (
+                session_pair_id, interval, period, timestamp
+            )
+            VALUES (?, ?, ?, ?)
+        """, (session_pair_id, interval, period, timestamp))
+
+        fetch_id = self.cursor.lastrowid
+
         self.cursor.executemany("""
             INSERT INTO ohlcv (
-                session_pair_id,
-                interval,
-                period,
+                fetch_id,
                 open_time,
                 open,
                 high,
@@ -79,7 +93,10 @@ class SQLiteDBWriter(BaseDBWriter):
                 volume,
                 raw
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, [
+            (fetch_id, *row)
+            for row in data
+        ])
 
         self.conn.commit()

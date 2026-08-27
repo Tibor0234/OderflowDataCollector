@@ -89,6 +89,11 @@ class PostgresRetention(BaseRetention):
                 for pair_id in pair_ids:
 
                     cursor.execute("""
+                        DELETE FROM instrument_metadata
+                        WHERE session_pair_id = %s
+                    """, (pair_id,))
+
+                    cursor.execute("""
                         DELETE FROM trades
                         WHERE session_pair_id = %s
                     """, (pair_id,))
@@ -110,6 +115,13 @@ class PostgresRetention(BaseRetention):
 
                     cursor.execute("""
                         DELETE FROM ohlcv
+                        WHERE fetch_id IN (
+                            SELECT id FROM ohlcv_fetches WHERE session_pair_id = %s
+                        )
+                    """, (pair_id,))
+
+                    cursor.execute("""
+                        DELETE FROM ohlcv_fetches
                         WHERE session_pair_id = %s
                     """, (pair_id,))
 

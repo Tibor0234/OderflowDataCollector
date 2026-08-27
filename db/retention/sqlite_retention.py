@@ -42,6 +42,11 @@ class SQLiteRetention(BaseRetention):
 
         for pair_id in pair_ids:
             self.cursor.execute(
+                "DELETE FROM instrument_metadata WHERE session_pair_id = ?",
+                (pair_id,)
+            )
+
+            self.cursor.execute(
                 "DELETE FROM trades WHERE session_pair_id = ?",
                 (pair_id,)
             )
@@ -62,7 +67,17 @@ class SQLiteRetention(BaseRetention):
             )
 
             self.cursor.execute(
-                "DELETE FROM ohlcv WHERE session_pair_id = ?",
+                """
+                DELETE FROM ohlcv
+                WHERE fetch_id IN (
+                    SELECT id FROM ohlcv_fetches WHERE session_pair_id = ?
+                )
+                """,
+                (pair_id,)
+            )
+
+            self.cursor.execute(
+                "DELETE FROM ohlcv_fetches WHERE session_pair_id = ?",
                 (pair_id,)
             )
 
